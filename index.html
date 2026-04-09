@@ -88,16 +88,15 @@ tr.grandtotal{font-weight:600;font-size:14px}
 <body>
 <div class="wrap">
   <h1>비브라이트 월별 매출 · 지출 대시보드</h1>
-  <p class="subtitle">클라우드 저장 시 팀원 모두가 동일한 데이터를 확인할 수 있습니다.</p>
+  <p class="subtitle">PC에서 클라우드 저장 시 팀원 모두가 동일한 데이터를 확인할 수 있습니다.</p>
 
   <div class="file-bar">
     <p>데이터 관리</p>
     <button class="primary cloud-save-btn" onclick="cloudSave()">☁ 클라우드 저장</button>
     <button class="cloud-load-btn" onclick="cloudLoad()">☁ 클라우드 불러오기</button>
     <span class="save-status" id="cloudMsg" style="margin-left:4px"></span>
-    <button onclick="exportJSON()" style="margin-left:auto">JSON 백업</button>
-    <button onclick="document.getElementById('importFile').click()">JSON 불러오기</button>
-    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+    <button onclick="resetToken()" style="margin-left:auto;font-size:11px">토큰 재설정</button>
+    <button onclick="exportJSON()">JSON 백업</button>
     <button class="danger" onclick="confirmReset()">전체 초기화</button>
   </div>
 
@@ -159,9 +158,12 @@ tr.grandtotal{font-weight:600;font-size:14px}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 <script>
 Chart.register(ChartDataLabels);
-const API_URL = 'https://script.google.com/macros/s/AKfycbzEBWdFWmvFcdJXYRwqLvn-6YHSwnDqZ0wOaZQlSJn2Vcsz79dJDuwSNwZaN0MFWPoi/exec';
-const SHEET_ID = '10PY26EqCZl7duoLp0F6ffS-giliA3F3gD2S7sq-bJv8';
-const SHEET_READ_URL = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:csv&sheet=data&range=A1';
+const GITHUB_USER = 'tdkwon0201';
+const GITHUB_REPO = 'tdkwon0201.github.io';
+const GITHUB_FILE = 'data.json';
+const GITHUB_RAW = 'https://raw.githubusercontent.com/'+GITHUB_USER+'/'+GITHUB_REPO+'/main/'+GITHUB_FILE;
+const GITHUB_API = 'https://api.github.com/repos/'+GITHUB_USER+'/'+GITHUB_REPO+'/contents/'+GITHUB_FILE;
+const TOKEN_KEY = 'dashboard_github_token';
 const STORAGE_KEY='dashboard_monthly_data';
 const CL=['#9B8FD9','#7ECAB4','#E8A87C','#7BAFD4','#D4A0B9','#A3C78F'];
 const CL2=['#D4B896','#D9918F','#B5B3AD','#9B8FD9','#7ECAB4','#E8A87C','#7BAFD4','#D4A0B9','#A3C78F','#8BAFD9','#CDA07A','#A89BCF'];
@@ -251,21 +253,42 @@ function confirmDeleteMonth(){if(Object.keys(store).length<=1)return;showModal('
 
 function exportJSON(){readRev();readExp();const blob=new Blob([JSON.stringify(store,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='dashboard_data_'+new Date().toISOString().slice(0,10)+'.json';a.click()}
 
+function resetToken(){localStorage.removeItem(TOKEN_KEY);cloudMsg('토큰이 초기화되었습니다. 다음 저장 시 다시 입력해 주세요.')}
+
 function cloudMsg(txt,isErr){const el=document.getElementById('cloudMsg');el.textContent=txt;el.style.color=isErr?'#E24B4A':'#1D9E75';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3000)}
 
+function getToken(){
+  var t=localStorage.getItem(TOKEN_KEY);
+  if(t)return t;
+  t=prompt('GitHub Personal Access Token을 입력하세요.\n(처음 한 번만 입력하면 브라우저에 저장됩니다)');
+  if(t&&t.trim()){t=t.trim();localStorage.setItem(TOKEN_KEY,t);return t}
+  return null;
+}
+
 function cloudSave(){
-  if(API_URL.includes('여기에')){alert('API_URL이 설정되지 않았습니다.\nsetup_guide.md를 참고하여 Google Apps Script URL을 입력해 주세요.');return}
   readRev();readExp();
-  const btn=document.querySelector('.cloud-save-btn');btn.disabled=true;btn.textContent='저장 중...';
-  var iframe=document.getElementById('hiddenFrame');
-  if(!iframe){iframe=document.createElement('iframe');iframe.id='hiddenFrame';iframe.name='hiddenFrame';iframe.style.display='none';document.body.appendChild(iframe)}
-  var form=document.createElement('form');
-  form.method='POST';form.action=API_URL;form.target='hiddenFrame';form.style.display='none';
-  var input=document.createElement('input');
-  input.name='data';input.value=JSON.stringify(store);
-  form.appendChild(input);document.body.appendChild(form);form.submit();document.body.removeChild(form);
-  saveToStorage();
-  setTimeout(function(){btn.disabled=false;btn.textContent='☁ 클라우드 저장';cloudMsg('클라우드 저장 완료')},2000);
+  var token=getToken();if(!token){cloudMsg('토큰이 필요합니다',true);return}
+  var btn=document.querySelector('.cloud-save-btn');btn.disabled=true;btn.textContent='저장 중...';
+  var content=btoa(unescape(encodeURIComponent(JSON.stringify(store,null,2))));
+
+  fetch(GITHUB_API,{headers:{'Authorization':'token '+token}})
+  .then(function(r){return r.ok?r.json():Promise.resolve(null)})
+  .then(function(info){
+    var body={message:'대시보드 데이터 업데이트',content:content};
+    if(info&&info.sha)body.sha=info.sha;
+    return fetch(GITHUB_API,{
+      method:'PUT',
+      headers:{'Authorization':'token '+token,'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+  })
+  .then(function(r){
+    if(r.ok){cloudMsg('클라우드 저장 완료');saveToStorage()}
+    else if(r.status===401){localStorage.removeItem(TOKEN_KEY);cloudMsg('토큰이 유효하지 않습니다. 다시 시도해 주세요.',true)}
+    else{r.text().then(function(t){cloudMsg('저장 실패: '+r.status,true)})}
+  })
+  .catch(function(err){cloudMsg('저장 실패: '+err.message,true)})
+  .finally(function(){btn.disabled=false;btn.textContent='☁ 클라우드 저장'});
 }
 
 function parseCloudData(raw){
@@ -276,31 +299,24 @@ function parseCloudData(raw){
   return false;
 }
 
-function loadFromSheet(callback){
-  fetch(SHEET_READ_URL)
-  .then(function(r){return r.text()})
-  .then(function(csv){
-    var json=csv.trim();
-    if(json.charAt(0)==='"')json=json.slice(1,-1);
-    json=json.replace(/""/g,'"');
-    if(parseCloudData(json)){callback(true)}
-    else{callback(false)}
-  })
-  .catch(function(){callback(false)});
-}
-
 function cloudLoad(){
   var btn=document.querySelector('.cloud-load-btn');if(btn){btn.disabled=true;btn.textContent='불러오는 중...';}
   function done(){if(btn){btn.disabled=false;btn.textContent='☁ 클라우드 불러오기';}}
-  loadFromSheet(function(ok){
-    if(ok){cloudMsg('클라우드 데이터 로드 완료')}
-    else{cloudMsg('불러오기 실패: 시트 공유 설정을 확인해 주세요',true)}
+  fetch(GITHUB_RAW+'?t='+Date.now())
+  .then(function(r){if(r.ok)return r.text();throw new Error(r.status)})
+  .then(function(txt){
+    if(parseCloudData(txt)){cloudMsg('클라우드 데이터 로드 완료')}
+    else{cloudMsg('저장된 데이터가 없습니다',true)}
     done();
-  });
+  })
+  .catch(function(err){cloudMsg('불러오기 실패: data.json이 없습니다. PC에서 먼저 저장해 주세요.',true);done()});
 }
 
 function autoCloudLoad(){
-  loadFromSheet(function(ok){if(ok)cloudMsg('최신 데이터 로드됨')});
+  fetch(GITHUB_RAW+'?t='+Date.now())
+  .then(function(r){if(r.ok)return r.text();throw new Error()})
+  .then(function(txt){if(parseCloudData(txt))cloudMsg('최신 데이터 로드됨')})
+  .catch(function(){});
 }
 
 function importJSON(event){const file=event.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=function(e){try{const p=JSON.parse(e.target.result);if(typeof p!=='object')throw new Error('잘못된 형식');store=p;saveToStorage();populateSelect()}catch(err){alert('파일을 읽을 수 없습니다: '+err.message)}};reader.readAsText(file);event.target.value=''}
