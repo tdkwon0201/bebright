@@ -159,7 +159,9 @@ tr.grandtotal{font-weight:600;font-size:14px}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-datalabels/2.2.0/chartjs-plugin-datalabels.min.js"></script>
 <script>
 Chart.register(ChartDataLabels);
-const API_URL = 'https://script.google.com/a/macros/bebright.kr/s/AKfycbzEBWdFWmvFcdJXYRwqLvn-6YHSwnDqZ0wOaZQlSJn2Vcsz79dJDuwSNwZaN0MFWPoi/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzEBWdFWmvFcdJXYRwqLvn-6YHSwnDqZ0wOaZQlSJn2Vcsz79dJDuwSNwZaN0MFWPoi/exec';
+const SHEET_ID = '10PY26EqCZl7duoLp0F6ffS-giliA3F3gD2S7sq-bJv8';
+const SHEET_READ_URL = 'https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:csv&sheet=data&range=A1';
 const STORAGE_KEY='dashboard_monthly_data';
 const CL=['#9B8FD9','#7ECAB4','#E8A87C','#7BAFD4','#D4A0B9','#A3C78F'];
 const CL2=['#D4B896','#D9918F','#B5B3AD','#9B8FD9','#7ECAB4','#E8A87C','#7BAFD4','#D4A0B9','#A3C78F','#8BAFD9','#CDA07A','#A89BCF'];
@@ -274,45 +276,31 @@ function parseCloudData(raw){
   return false;
 }
 
+function loadFromSheet(callback){
+  fetch(SHEET_READ_URL)
+  .then(function(r){return r.text()})
+  .then(function(csv){
+    var json=csv.trim();
+    if(json.charAt(0)==='"')json=json.slice(1,-1);
+    json=json.replace(/""/g,'"');
+    if(parseCloudData(json)){callback(true)}
+    else{callback(false)}
+  })
+  .catch(function(){callback(false)});
+}
+
 function cloudLoad(){
-  if(API_URL.includes('여기에')){alert('API_URL이 설정되지 않았습니다.\nsetup_guide.md를 참고하여 Google Apps Script URL을 입력해 주세요.');return}
   var btn=document.querySelector('.cloud-load-btn');if(btn){btn.disabled=true;btn.textContent='불러오는 중...';}
-  var cbName='cb_'+Date.now();
-  window[cbName]=function(res){
-    delete window[cbName];
-    var s=document.getElementById('jsonp_'+cbName);if(s)s.remove();
-    if(btn){btn.disabled=false;btn.textContent='☁ 클라우드 불러오기';}
-    if(res&&res.status==='ok'&&res.data){
-      if(parseCloudData(res.data)){cloudMsg('클라우드 데이터 로드 완료')}
-      else{cloudMsg('저장된 데이터가 없습니다',true)}
-    }else{cloudMsg('불러오기 실패',true)}
-  };
-  var script=document.createElement('script');
-  script.id='jsonp_'+cbName;
-  script.src=API_URL+'?callback='+cbName;
-  script.onerror=function(){
-    delete window[cbName];script.remove();
-    if(btn){btn.disabled=false;btn.textContent='☁ 클라우드 불러오기';}
-    cloudMsg('불러오기 실패: 네트워크 오류',true);
-  };
-  document.body.appendChild(script);
+  function done(){if(btn){btn.disabled=false;btn.textContent='☁ 클라우드 불러오기';}}
+  loadFromSheet(function(ok){
+    if(ok){cloudMsg('클라우드 데이터 로드 완료')}
+    else{cloudMsg('불러오기 실패: 시트 공유 설정을 확인해 주세요',true)}
+    done();
+  });
 }
 
 function autoCloudLoad(){
-  if(API_URL.includes('여기에'))return;
-  var cbName='cb_auto_'+Date.now();
-  window[cbName]=function(res){
-    delete window[cbName];
-    var s=document.getElementById('jsonp_'+cbName);if(s)s.remove();
-    if(res&&res.status==='ok'&&res.data){
-      if(parseCloudData(res.data)){cloudMsg('최신 데이터 로드됨')}
-    }
-  };
-  var script=document.createElement('script');
-  script.id='jsonp_'+cbName;
-  script.src=API_URL+'?callback='+cbName;
-  script.onerror=function(){delete window[cbName];script.remove()};
-  document.body.appendChild(script);
+  loadFromSheet(function(ok){if(ok)cloudMsg('최신 데이터 로드됨')});
 }
 
 function importJSON(event){const file=event.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=function(e){try{const p=JSON.parse(e.target.result);if(typeof p!=='object')throw new Error('잘못된 형식');store=p;saveToStorage();populateSelect()}catch(err){alert('파일을 읽을 수 없습니다: '+err.message)}};reader.readAsText(file);event.target.value=''}
