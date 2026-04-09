@@ -161,7 +161,7 @@ Chart.register(ChartDataLabels);
 const GITHUB_USER = 'tdkwon0201';
 const GITHUB_REPO = 'bebright';
 const GITHUB_FILE = 'data.json';
-const GITHUB_RAW = 'https://raw.githubusercontent.com/'+GITHUB_USER+'/'+GITHUB_REPO+'/main/'+GITHUB_FILE;
+const DATA_URL = 'https://tdkwon0201.github.io/bebright/data.json';
 const GITHUB_API = 'https://api.github.com/repos/'+GITHUB_USER+'/'+GITHUB_REPO+'/contents/'+GITHUB_FILE;
 const TOKEN_KEY = 'dashboard_github_token';
 const STORAGE_KEY='dashboard_monthly_data';
@@ -316,20 +316,25 @@ function parseCloudData(raw){
 function cloudLoad(){
   var btn=document.querySelector('.cloud-load-btn');if(btn){btn.disabled=true;btn.textContent='불러오는 중...';}
   function done(){if(btn){btn.disabled=false;btn.textContent='☁ 클라우드 불러오기';}}
-  fetch('./data.json?t='+Date.now(),{cache:'no-store'})
-  .then(function(r){if(r.ok)return r.text();throw new Error(r.status)})
+  fetch(DATA_URL+'?t='+Date.now(),{cache:'no-store'})
+  .then(function(r){
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    return r.text();
+  })
   .then(function(txt){
-    if(parseCloudData(txt)){cloudMsg('클라우드 데이터 로드 완료')}
-    else{cloudMsg('저장된 데이터가 없습니다',true)}
+    if(!txt||txt.trim().length<5){cloudMsg('빈 데이터입니다',true);done();return}
+    var ok=parseCloudData(txt);
+    if(ok){cloudMsg('클라우드 데이터 로드 완료')}
+    else{cloudMsg('데이터 파싱 실패',true)}
     done();
   })
-  .catch(function(){cloudMsg('불러오기 실패: PC에서 먼저 클라우드 저장을 해주세요.',true);done()});
+  .catch(function(err){cloudMsg('불러오기 실패: '+err.message,true);done()});
 }
 
 function autoCloudLoad(){
-  fetch('./data.json?t='+Date.now(),{cache:'no-store'})
-  .then(function(r){if(r.ok)return r.text();throw new Error()})
-  .then(function(txt){if(parseCloudData(txt))cloudMsg('최신 데이터 로드됨')})
+  fetch(DATA_URL+'?t='+Date.now(),{cache:'no-store'})
+  .then(function(r){if(!r.ok)throw new Error();return r.text()})
+  .then(function(txt){if(txt&&txt.trim().length>5&&parseCloudData(txt))cloudMsg('최신 데이터 로드됨')})
   .catch(function(){});
 }
 
