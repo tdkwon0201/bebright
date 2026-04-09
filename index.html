@@ -92,8 +92,8 @@ tr.grandtotal{font-weight:600;font-size:14px}
 
   <div class="file-bar">
     <p>데이터 관리</p>
-    <button class="primary" onclick="cloudSave()">☁ 클라우드 저장</button>
-    <button onclick="cloudLoad()">☁ 클라우드 불러오기</button>
+    <button class="primary cloud-save-btn" onclick="cloudSave()">☁ 클라우드 저장</button>
+    <button class="cloud-load-btn" onclick="cloudLoad()">☁ 클라우드 불러오기</button>
     <span class="save-status" id="cloudMsg" style="margin-left:4px"></span>
     <button onclick="exportJSON()" style="margin-left:auto">JSON 백업</button>
     <button onclick="document.getElementById('importFile').click()">JSON 불러오기</button>
@@ -252,39 +252,67 @@ function exportJSON(){readRev();readExp();const blob=new Blob([JSON.stringify(st
 function cloudMsg(txt,isErr){const el=document.getElementById('cloudMsg');el.textContent=txt;el.style.color=isErr?'#E24B4A':'#1D9E75';el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3000)}
 
 function cloudSave(){
-  if(API_URL.includes('여기에')){alert('API_URL이 설정되지 않았습니다.\\nsetup_guide.md를 참고하여 Google Apps Script URL을 입력해 주세요.');return}
+  if(API_URL.includes('여기에')){alert('API_URL이 설정되지 않았습니다.\nsetup_guide.md를 참고하여 Google Apps Script URL을 입력해 주세요.');return}
   readRev();readExp();
-  const btn=event.target;btn.disabled=true;btn.textContent='저장 중...';
-  fetch(API_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:store})})
-  .then(()=>{cloudMsg('클라우드 저장 완료');saveToStorage()})
-  .catch(err=>{cloudMsg('저장 실패: '+err.message,true)})
-  .finally(()=>{btn.disabled=false;btn.textContent='☁ 클라우드 저장'});
+  const btn=document.querySelector('.cloud-save-btn');btn.disabled=true;btn.textContent='저장 중...';
+  var iframe=document.getElementById('hiddenFrame');
+  if(!iframe){iframe=document.createElement('iframe');iframe.id='hiddenFrame';iframe.name='hiddenFrame';iframe.style.display='none';document.body.appendChild(iframe)}
+  var form=document.createElement('form');
+  form.method='POST';form.action=API_URL;form.target='hiddenFrame';form.style.display='none';
+  var input=document.createElement('input');
+  input.name='data';input.value=JSON.stringify(store);
+  form.appendChild(input);document.body.appendChild(form);form.submit();document.body.removeChild(form);
+  saveToStorage();
+  setTimeout(function(){btn.disabled=false;btn.textContent='☁ 클라우드 저장';cloudMsg('클라우드 저장 완료')},2000);
+}
+
+function parseCloudData(raw){
+  try{
+    var parsed=typeof raw==='string'?JSON.parse(raw):raw;
+    if(parsed&&typeof parsed==='object'&&Object.keys(parsed).length){store=parsed;saveToStorage();populateSelect();return true}
+  }catch(e){}
+  return false;
 }
 
 function cloudLoad(){
-  if(API_URL.includes('여기에')){alert('API_URL이 설정되지 않았습니다.\\nsetup_guide.md를 참고하여 Google Apps Script URL을 입력해 주세요.');return}
-  const btn=event.target;btn.disabled=true;btn.textContent='불러오는 중...';
-  fetch(API_URL)
-  .then(r=>r.json())
-  .then(res=>{
-    if(res.status==='ok'&&res.data){
-      const parsed=typeof res.data==='string'?JSON.parse(res.data):res.data;
-      if(Object.keys(parsed).length){store=parsed;saveToStorage();populateSelect();cloudMsg('클라우드 데이터 로드 완료')}
+  if(API_URL.includes('여기에')){alert('API_URL이 설정되지 않았습니다.\nsetup_guide.md를 참고하여 Google Apps Script URL을 입력해 주세요.');return}
+  var btn=document.querySelector('.cloud-load-btn');if(btn){btn.disabled=true;btn.textContent='불러오는 중...';}
+  var cbName='cb_'+Date.now();
+  window[cbName]=function(res){
+    delete window[cbName];
+    var s=document.getElementById('jsonp_'+cbName);if(s)s.remove();
+    if(btn){btn.disabled=false;btn.textContent='☁ 클라우드 불러오기';}
+    if(res&&res.status==='ok'&&res.data){
+      if(parseCloudData(res.data)){cloudMsg('클라우드 데이터 로드 완료')}
       else{cloudMsg('저장된 데이터가 없습니다',true)}
-    }
-  })
-  .catch(err=>{cloudMsg('불러오기 실패: '+err.message,true)})
-  .finally(()=>{btn.disabled=false;btn.textContent='☁ 클라우드 불러오기'});
+    }else{cloudMsg('불러오기 실패',true)}
+  };
+  var script=document.createElement('script');
+  script.id='jsonp_'+cbName;
+  script.src=API_URL+'?callback='+cbName;
+  script.onerror=function(){
+    delete window[cbName];script.remove();
+    if(btn){btn.disabled=false;btn.textContent='☁ 클라우드 불러오기';}
+    cloudMsg('불러오기 실패: 네트워크 오류',true);
+  };
+  document.body.appendChild(script);
 }
 
 function autoCloudLoad(){
   if(API_URL.includes('여기에'))return;
-  fetch(API_URL).then(r=>r.json()).then(res=>{
-    if(res.status==='ok'&&res.data){
-      const parsed=typeof res.data==='string'?JSON.parse(res.data):res.data;
-      if(Object.keys(parsed).length){store=parsed;saveToStorage();populateSelect();cloudMsg('최신 데이터 로드됨')}
+  var cbName='cb_auto_'+Date.now();
+  window[cbName]=function(res){
+    delete window[cbName];
+    var s=document.getElementById('jsonp_'+cbName);if(s)s.remove();
+    if(res&&res.status==='ok'&&res.data){
+      if(parseCloudData(res.data)){cloudMsg('최신 데이터 로드됨')}
     }
-  }).catch(()=>{});
+  };
+  var script=document.createElement('script');
+  script.id='jsonp_'+cbName;
+  script.src=API_URL+'?callback='+cbName;
+  script.onerror=function(){delete window[cbName];script.remove()};
+  document.body.appendChild(script);
 }
 
 function importJSON(event){const file=event.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=function(e){try{const p=JSON.parse(e.target.result);if(typeof p!=='object')throw new Error('잘못된 형식');store=p;saveToStorage();populateSelect()}catch(err){alert('파일을 읽을 수 없습니다: '+err.message)}};reader.readAsText(file);event.target.value=''}
