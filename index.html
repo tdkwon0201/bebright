@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>월별 매출/지출 대시보드</title>
+<title>비브라이트 월별 매출/지출 대시보드</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;background:#f5f5f4;color:#1a1a1a;padding:24px;line-height:1.6}
@@ -87,7 +87,7 @@ tr.grandtotal{font-weight:600;font-size:14px}
 </head>
 <body>
 <div class="wrap">
-  <h1>월별 매출 · 지출 대시보드</h1>
+  <h1>비브라이트 월별 매출 · 지출 대시보드</h1>
   <p class="subtitle">PC에서 클라우드 저장 시 팀원 모두가 동일한 데이터를 확인할 수 있습니다.</p>
 
   <div class="file-bar">
@@ -308,7 +308,12 @@ function cloudSave(){
 function parseCloudData(raw){
   try{
     var parsed=typeof raw==='string'?JSON.parse(raw):raw;
-    if(parsed&&typeof parsed==='object'&&Object.keys(parsed).length){store=parsed;saveToStorage();populateSelect();return true}
+    if(parsed&&typeof parsed==='object'&&Object.keys(parsed).length){
+      store=parsed;
+      try{localStorage.setItem(STORAGE_KEY,JSON.stringify(store))}catch(e){}
+      populateSelect();
+      return true;
+    }
   }catch(e){}
   return false;
 }
