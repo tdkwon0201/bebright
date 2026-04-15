@@ -49,6 +49,11 @@ td:nth-child(2),td:nth-child(3){text-align:right}
 tr.subtotal{font-weight:600;border-bottom:2px solid #ddd}
 tr.grandtotal{font-weight:600;font-size:14px}
 .del-btn{font-size:11px;padding:2px 6px;color:#E24B4A;border-color:#E24B4A}
+.filter-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.filter-tag{font-size:12px;padding:4px 12px;border-radius:20px;border:1px solid #ddd;background:#fff;cursor:pointer;transition:all 0.2s}
+.filter-tag:hover{border-color:#9B8FD9}
+.filter-tag.active{background:#9B8FD9;color:#fff;border-color:#9B8FD9}
+.filter-tag.all{font-weight:600}
 .green{color:#1D9E75}.red{color:#E24B4A}
 .toolbar{display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
 .save-status{font-size:12px;color:#1D9E75;margin-left:4px;opacity:0;transition:opacity 0.3s}
@@ -140,6 +145,26 @@ tr.grandtotal{font-weight:600;font-size:14px}
       <div style="position:relative;height:260px"><canvas id="barChart"></canvas></div>
     </div>
   </div>
+
+  <div style="border-top:2px solid #eee;margin-top:8px;padding-top:20px">
+    <p class="section-title" style="font-size:18px;margin-bottom:16px">월별 추이</p>
+    <div style="margin-bottom:24px">
+      <p class="chart-label">매출 거래처별 월별 추이</p>
+      <div id="revTags" class="filter-tags"></div>
+      <div style="position:relative;height:300px"><canvas id="revTrend"></canvas></div>
+    </div>
+    <div style="margin-bottom:24px">
+      <p class="chart-label">지출 항목별 월별 추이</p>
+      <div id="expTags" class="filter-tags"></div>
+      <div style="position:relative;height:300px"><canvas id="expTrend"></canvas></div>
+    </div>
+    <div style="margin-bottom:24px">
+      <p class="chart-label">월별 총매출 · 총지출 · 영업이익 추이</p>
+      <div style="position:relative;height:300px"><canvas id="plTrend"></canvas></div>
+    </div>
+    <div id="trendTable" style="overflow-x:auto"></div>
+  </div>
+
   </div>
 </div>
 
@@ -168,10 +193,24 @@ const STORAGE_KEY='dashboard_monthly_data';
 const CL=['#9B8FD9','#7ECAB4','#E8A87C','#7BAFD4','#D4A0B9','#A3C78F'];
 const CL2=['#D4B896','#D9918F','#B5B3AD','#9B8FD9','#7ECAB4','#E8A87C','#7BAFD4','#D4A0B9','#A3C78F','#8BAFD9','#CDA07A','#A89BCF'];
 const CLIENTS=['잇라이킷(자사브랜드)','밤부뉴(위탁판매)','푸드홀릭','룸서비스딜리버리','미담도시락','도시락타임'];
-const DEFAULT_EXP=['원자재','임금','4대보험','임대료','대출이자','수도광열비','물류/배송비','포장재','감가상각비','세금/공과금','광고/마케팅비','기타'];
+const DEFAULT_EXP=['삼성웰스토리','현아농산','쿠팡','네이버','컬리넥스트마일','CJ대한통운','포장재','임금','4대보험','식대','기타 세금/공과금','광고/마케팅비','기타'];
 
 function defaultMonth(){const n=new Date();return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')}
-function newMonthData(){const r={};CLIENTS.forEach(c=>r[c]=0);const e={};DEFAULT_EXP.forEach(x=>e[x]=0);return{rev:r,exp:e}}
+function newMonthData(baseMonth){
+  var r={},e={};
+  if(baseMonth&&store[baseMonth]){
+    Object.keys(store[baseMonth].rev).forEach(function(k){r[k]=0});
+    Object.keys(store[baseMonth].exp).forEach(function(k){e[k]=0});
+  }else{
+    CLIENTS.forEach(c=>r[c]=0);
+    DEFAULT_EXP.forEach(x=>e[x]=0);
+  }
+  return{rev:r,exp:e};
+}
+function getLatestMonth(){
+  var ms=Object.keys(store).sort();
+  return ms.length?ms[ms.length-1]:null;
+}
 function loadFromStorage(){try{const raw=localStorage.getItem(STORAGE_KEY);if(raw){const p=JSON.parse(raw);if(Object.keys(p).length)return p}}catch(e){}const m=defaultMonth();const d={};d[m]=newMonthData();return d}
 
 let store=loadFromStorage();
@@ -180,7 +219,7 @@ function saveToStorage(){readRev();readExp();try{localStorage.setItem(STORAGE_KE
 function showSaveMsg(){const el=document.getElementById('saveMsg');el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2000)}
 function saveNow(){saveToStorage()}
 function curMonth(){return document.getElementById('monthSel').value}
-function ensure(m){if(!store[m])store[m]=newMonthData()}
+function ensure(m){if(!store[m])store[m]=newMonthData(getLatestMonth())}
 
 const fmt=v=>v>=1e8?(v/1e8).toFixed(1)+'억':v>=1e4?Math.round(v/1e4).toLocaleString()+'만':v.toLocaleString();
 const fmtW=v=>v.toLocaleString()+'원';
@@ -243,6 +282,106 @@ function refresh(){
   const expDatasets=el2.map((l,i)=>({label:l,data:[ev2[i]],backgroundColor:ec2[i],borderRadius:0,borderSkipped:false}));
   expPieC=new Chart(document.getElementById('expBarH'),{type:'bar',data:{labels:[''],datasets:expDatasets},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{stacked:true,display:false},y:{stacked:true,display:false}},plugins:{legend:{display:false},datalabels:stackDlE,tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+fmtW(ctx.raw)+' ('+pct(ctx.raw,tE)+')'}}}}});
   document.getElementById('expLegend').innerHTML=el2.map((l,i)=>`<span><span class="dot" style="background:${ec2[i]}"></span>${l} ${pct(ev2[i],tE)}</span>`).join('');
+
+  renderTrend();
+}
+
+var revTrendC,expTrendC,plTrendC;
+var revFilter=null,expFilter=null;
+
+function setRevFilter(key){revFilter=(revFilter===key)?null:key;renderTrend()}
+function setExpFilter(key){expFilter=(expFilter===key)?null:key;renderTrend()}
+
+function renderTrend(){
+  var months=Object.keys(store).sort();
+  if(months.length<1)return;
+
+  var allRev={},allExp={};
+  months.forEach(function(m){
+    if(store[m].rev)Object.keys(store[m].rev).forEach(function(k){allRev[k]=true});
+    if(store[m].exp)Object.keys(store[m].exp).forEach(function(k){allExp[k]=true});
+  });
+  var revKeys=Object.keys(allRev),expKeys=Object.keys(allExp);
+
+  // 매출 필터 태그
+  var revTagHtml='<span class="filter-tag all'+(revFilter===null?' active':'')+'" onclick="revFilter=null;renderTrend()">전체</span>';
+  revKeys.forEach(function(k,i){
+    revTagHtml+='<span class="filter-tag'+(revFilter===k?' active':'')+'" style="'+(revFilter===k?'background:'+CL[i%CL.length]+';border-color:'+CL[i%CL.length]+';color:#fff':'')+'" onclick="setRevFilter(\''+k.replace(/'/g,"\\'")+'\')">'+k+'</span>';
+  });
+  document.getElementById('revTags').innerHTML=revTagHtml;
+
+  // 지출 필터 태그
+  var expTagHtml='<span class="filter-tag all'+(expFilter===null?' active':'')+'" onclick="expFilter=null;renderTrend()">전체</span>';
+  expKeys.forEach(function(k,i){
+    expTagHtml+='<span class="filter-tag'+(expFilter===k?' active':'')+'" style="'+(expFilter===k?'background:'+CL2[i%CL2.length]+';border-color:'+CL2[i%CL2.length]+';color:#fff':'')+'" onclick="setExpFilter(\''+k.replace(/'/g,"\\'")+'\')">'+k+'</span>';
+  });
+  document.getElementById('expTags').innerHTML=expTagHtml;
+
+  // 매출 추이 차트
+  var filteredRevKeys=revFilter?[revFilter]:revKeys;
+  var revDS=filteredRevKeys.map(function(k){
+    var i=revKeys.indexOf(k);
+    var isOnly=revFilter!==null;
+    return{label:k,data:months.map(function(m){return(store[m].rev&&store[m].rev[k])||0}),
+      borderColor:CL[i%CL.length],backgroundColor:isOnly?CL[i%CL.length]+'22':CL[i%CL.length]+'33',
+      fill:isOnly,tension:0.3,borderWidth:isOnly?3:2,pointRadius:isOnly?5:3};
+  });
+  if(revTrendC)revTrendC.destroy();
+  revTrendC=new Chart(document.getElementById('revTrend'),{type:'line',data:{labels:months,datasets:revDS},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:!revFilter,position:'bottom',labels:{font:{size:11},boxWidth:12}},datalabels:{display:!!revFilter,formatter:function(v){return fmt(v)},color:'#444',font:{size:11,weight:'500'},anchor:'top',align:'top'}},scales:{y:{ticks:{callback:function(v){return fmt(v)}},grid:{color:'rgba(0,0,0,0.05)'}},x:{grid:{display:false}}},interaction:{mode:'index',intersect:false}}});
+
+  // 지출 추이 차트
+  var filteredExpKeys=expFilter?[expFilter]:expKeys;
+  var expDS=filteredExpKeys.map(function(k){
+    var i=expKeys.indexOf(k);
+    var isOnly=expFilter!==null;
+    return{label:k,data:months.map(function(m){return(store[m].exp&&store[m].exp[k])||0}),
+      borderColor:CL2[i%CL2.length],backgroundColor:isOnly?CL2[i%CL2.length]+'22':CL2[i%CL2.length]+'33',
+      fill:isOnly,tension:0.3,borderWidth:isOnly?3:2,pointRadius:isOnly?5:3};
+  });
+  if(expTrendC)expTrendC.destroy();
+  expTrendC=new Chart(document.getElementById('expTrend'),{type:'line',data:{labels:months,datasets:expDS},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:!expFilter,position:'bottom',labels:{font:{size:11},boxWidth:12}},datalabels:{display:!!expFilter,formatter:function(v){return fmt(v)},color:'#444',font:{size:11,weight:'500'},anchor:'top',align:'top'}},scales:{y:{ticks:{callback:function(v){return fmt(v)}},grid:{color:'rgba(0,0,0,0.05)'}},x:{grid:{display:false}}},interaction:{mode:'index',intersect:false}}});
+
+  // 총매출/총지출/영업이익 추이
+  var totRev=[],totExp=[],totProfit=[];
+  months.forEach(function(m){
+    var tr=0,te=0;
+    if(store[m].rev)Object.values(store[m].rev).forEach(function(v){tr+=v});
+    if(store[m].exp)Object.values(store[m].exp).forEach(function(v){te+=v});
+    totRev.push(tr);totExp.push(te);totProfit.push(tr-te);
+  });
+  if(plTrendC)plTrendC.destroy();
+  plTrendC=new Chart(document.getElementById('plTrend'),{type:'line',data:{labels:months,datasets:[
+    {label:'총매출',data:totRev,borderColor:'#7ECAB4',backgroundColor:'#7ECAB433',fill:false,tension:0.3,borderWidth:2,pointRadius:4},
+    {label:'총지출',data:totExp,borderColor:'#E8A87C',backgroundColor:'#E8A87C33',fill:false,tension:0.3,borderWidth:2,pointRadius:4},
+    {label:'영업이익',data:totProfit,borderColor:'#9B8FD9',backgroundColor:'#9B8FD933',fill:false,tension:0.3,borderWidth:2,pointRadius:4}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12}},datalabels:{display:false}},scales:{y:{ticks:{callback:function(v){return fmt(v)}},grid:{color:'rgba(0,0,0,0.05)'}},x:{grid:{display:false}}},interaction:{mode:'index',intersect:false}}});
+
+  // 추이 테이블
+  var html='<table><tr><th>구분</th>';
+  months.forEach(function(m){html+='<th style="text-align:right">'+m+'</th>'});
+  html+='</tr>';
+  revKeys.forEach(function(k){
+    var hl=revFilter===k?' style="background:#f0eeff"':'';
+    html+='<tr'+hl+'><td>'+k+'</td>';
+    months.forEach(function(m){html+='<td style="text-align:right">'+fmtW((store[m].rev&&store[m].rev[k])||0)+'</td>'});
+    html+='</tr>';
+  });
+  html+='<tr class="subtotal"><td>매출 합계</td>';
+  months.forEach(function(m,i){html+='<td style="text-align:right">'+fmtW(totRev[i])+'</td>'});
+  html+='</tr>';
+  expKeys.forEach(function(k){
+    var hl=expFilter===k?' style="background:#fef3ec"':'';
+    html+='<tr'+hl+'><td style="color:#888">- '+k+'</td>';
+    months.forEach(function(m){html+='<td style="text-align:right">'+fmtW((store[m].exp&&store[m].exp[k])||0)+'</td>'});
+    html+='</tr>';
+  });
+  html+='<tr class="subtotal"><td>지출 합계</td>';
+  months.forEach(function(m,i){html+='<td style="text-align:right">'+fmtW(totExp[i])+'</td>'});
+  html+='</tr>';
+  html+='<tr class="grandtotal"><td>영업이익</td>';
+  months.forEach(function(m,i){var p=totProfit[i];html+='<td style="text-align:right" class="'+(p>=0?'green':'red')+'">'+(p>=0?'+':'')+fmtW(p)+'</td>'});
+  html+='</tr></table>';
+  document.getElementById('trendTable').innerHTML=html;
 }
 
 function populateSelect(){const sel=document.getElementById('monthSel');const ms=Object.keys(store).sort();sel.innerHTML=ms.map(m=>`<option value="${m}">${m}</option>`).join('');sel.value=ms[ms.length-1];sel.onchange=()=>{buildRevInputs();buildExpInputs();refresh()};buildRevInputs();buildExpInputs();refresh()}
